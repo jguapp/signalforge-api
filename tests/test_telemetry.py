@@ -27,6 +27,14 @@ class TelemetryServiceTests(unittest.TestCase):
         self.assertEqual(1, self.app.database.counts()["incidents"])
         self.assertEqual(1, self.app.database.counts()["pending_outbox"])
 
+    def test_opened_notification_includes_incident_details(self) -> None:
+        self.service.ingest(INGESTER, telemetry_payload("checkout.latency_ms", [600, 700, 800]))
+        message = self.app.database.pending_outbox_messages(1)[0]
+        self.assertEqual(2, message.payload["schema_version"])
+        self.assertIn("incident_id", message.payload)
+        self.assertIn("monitor", message.payload)
+        self.assertIn("trigger", message.payload)
+
     def test_continued_breach_does_not_open_duplicate_incident(self) -> None:
         self.service.ingest(INGESTER, telemetry_payload("checkout.latency_ms", [600, 700, 800]))
         second = self.service.ingest(INGESTER, telemetry_payload("checkout.latency_ms", [900]))
@@ -77,4 +85,3 @@ class TelemetryServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

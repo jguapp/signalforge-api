@@ -6,7 +6,7 @@ from datetime import timedelta
 from ..auth import AuthContext
 from ..clock import Clock
 from ..domain.errors import ValidationError
-from ..domain.models import Incident, IncidentStatus, MetricPoint, MonitorState, OutboxMessage
+from ..domain.models import Incident, IncidentStatus, MetricPoint, Monitor, MonitorState, OutboxMessage, isoformat
 from ..domain.policies import window_is_breaching
 from ..ids import IdGenerator
 from ..repositories.protocols import Database
@@ -57,7 +57,7 @@ class TelemetryService:
                     recent = self._database.recent_points(context.org_id, metric, monitor.window_size)
                     active_incident = self._database.find_unresolved_incident(context.org_id, monitor.id)
                     if window_is_breaching(monitor, recent) and active_incident is None:
-                        incident = self._open_incident(context.org_id, monitor.id, monitor.name, recent[-1])
+                        incident = self._open_incident(context.org_id, monitor, recent[-1])
                         opened.append(incident.id)
                     elif not window_is_breaching(monitor, recent) and active_incident is not None:
                         updated = active_incident.resolve(now=self._clock.now())
@@ -100,21 +100,52 @@ class TelemetryService:
                     raise ValidationError(f"a request cannot contain more than {self._max_points} points")
         return parsed
 
-    def _open_incident(self, org_id: str, monitor_id: str, monitor_name: str, point: MetricPoint) -> Incident:
+    def _open_incident(self, org_id: str, monitor: Monitor, point: MetricPoint) -> Incident:
         now = self._clock.now()
         incident = Incident(
             id=self._ids.new("inc"),
             org_id=org_id,
-            monitor_id=monitor_id,
-            monitor_name=monitor_name,
+            monitor_id=monitor.id,
+            monitor_name=monitor.name,
             status=IncidentStatus.OPEN,
             trigger_value=point.value,
             opened_at=now,
             updated_at=now,
         )
         self._database.add_incident(incident)
-        self._enqueue(org_id, "incident.opened", incident)
+        self._enqueue_opened(org_id, incident, monitor, point)
         return incident
+
+    def _enqueue_opened(
+        self,
+        org_id: str,
+        incident: Incident,
+        monitor: Monitor,
+        point: MetricPoint,
+    ) -> None:
+        message = OutboxMessage.create(
+            id=self._ids.new("msg"),
+            org_id=org_id,
+            topic="incident.opened",
+            payload={
+                "schema_version": 2,
+                "incident_id": monitor.id,
+                "monitor": {
+                    "id": monitor.id,
+                    "name": monitor.metric,
+                    "metric": monitor.metric,
+                    "threshold": str(point.value),
+                },
+                "trigger": {
+                    "value": str(point.value),
+                    "timestamp": isoformat(point.timestamp),
+                    "tags": dict(point.tags),
+                },
+                "status": incident.status.value,
+            },
+            now=self._clock.now(),
+        )
+        self._database.add_outbox_message(message)
 
     def _enqueue(self, org_id: str, topic: str, incident: Incident) -> None:
         message = OutboxMessage.create(
