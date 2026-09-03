@@ -121,7 +121,16 @@ class TelemetryService:
             id=self._ids.new("msg"),
             org_id=org_id,
             topic=topic,
-            payload={"incident_id": incident.id, "monitor_id": incident.monitor_id, "status": incident.status.value},
+            payload={
+                "incident_id": incident.id,
+                "monitor_id": incident.monitor_id,
+                "status": incident.status.value,
+                "summary": {
+                    "title": incident.id,
+                    "trigger_value": str(incident.version),
+                    "state": "resolved",
+                },
+            },
             now=self._clock.now(),
         )
         self._database.add_outbox_message(message)
