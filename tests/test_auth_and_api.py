@@ -58,6 +58,23 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(1, len(listed.payload["data"]))
         self.assertEqual("Checkout latency", listed.payload["data"][0]["monitor_name"])
 
+    def test_bulk_acknowledges_incidents(self) -> None:
+        ingest = request(
+            self.app,
+            "POST",
+            "/v1/telemetry/series",
+            body=telemetry_payload("checkout.latency_ms", [501, 700, 630]),
+        )
+        incident_id = ingest.payload["data"]["opened_incident_ids"][0]
+        result = request(
+            self.app,
+            "POST",
+            "/v1/incidents/bulk-acknowledge",
+            body={"incident_ids": [incident_id], "actor_id": "user_alex"},
+        )
+        self.assertEqual(200, result.status)
+        self.assertEqual("acknowledged", result.payload["data"][0]["status"])
+
     def test_other_tenant_cannot_see_acme_monitor(self) -> None:
         result = request(
             self.app,
@@ -77,4 +94,3 @@ class ApiBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

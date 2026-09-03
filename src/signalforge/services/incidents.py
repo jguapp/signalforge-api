@@ -64,6 +64,23 @@ class IncidentService:
         self._database.save_incident(updated)
         return updated
 
+    def bulk_acknowledge(self, context: AuthContext, data: dict[str, object]) -> list[Incident]:
+        context.require("incidents:write")
+        incident_ids = data.get("incident_ids", [])
+        actor_id = str(data.get("actor_id", context.actor_id))
+        updated: list[Incident] = []
+        for incident_id in incident_ids:
+            incident = next(
+                (item for item in self._database.iter_all_incidents() if item.id == incident_id),
+                None,
+            )
+            if incident is None:
+                raise NotFoundError(f"incident {incident_id!r} was not found")
+            acknowledged = incident.acknowledge(actor_id=actor_id, now=self._clock.now())
+            self._database.save_incident(acknowledged)
+            updated.append(acknowledged)
+        return updated
+
     def _required_incident(self, org_id: str, incident_id: str) -> Incident:
         incident = self._database.get_incident(org_id, incident_id)
         if incident is None:
@@ -90,4 +107,3 @@ class IncidentService:
         except (ValueError, TypeError):
             allowed = ", ".join(item.value for item in IncidentStatus)
             raise ValidationError(f"status must be one of: {allowed}") from None
-

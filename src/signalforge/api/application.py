@@ -51,6 +51,7 @@ class SignalForgeApi:
                 Route.create("PATCH", r"/v1/monitors/(?P<monitor_id>[^/]+)", self._update_monitor),
                 Route.create("POST", r"/v1/telemetry/series", self._ingest_telemetry),
                 Route.create("GET", r"/v1/incidents", self._list_incidents),
+                Route.create("POST", r"/v1/incidents/bulk-acknowledge", self._bulk_acknowledge_incidents),
                 Route.create("GET", r"/v1/incidents/(?P<incident_id>[^/]+)", self._get_incident),
                 Route.create("POST", r"/v1/incidents/(?P<incident_id>[^/]+)/acknowledge", self._acknowledge_incident),
             ]
@@ -155,6 +156,16 @@ class SignalForgeApi:
         incident = self._incidents.get(context, parameters["incident_id"])
         return Response(HTTPStatus.OK, {"data": incident.to_dict()})
 
+    def _bulk_acknowledge_incidents(
+        self,
+        request: Request,
+        context: AuthContext | None,
+        parameters: dict[str, str],
+    ) -> Response:
+        assert context is not None
+        incidents = self._incidents.bulk_acknowledge(context, request.json_object())
+        return Response(HTTPStatus.OK, {"data": [incident.to_dict() for incident in incidents]})
+
     def _acknowledge_incident(self, request: Request, context: AuthContext | None, parameters: dict[str, str]) -> Response:
         assert context is not None
         incident = self._incidents.acknowledge(context, parameters["incident_id"], request.json_object())
@@ -173,4 +184,3 @@ class SignalForgeApi:
         if path.startswith("/v1/incidents/"):
             return "/v1/incidents/:id"
         return path
-
